@@ -1,0 +1,859 @@
+// TODO: Repensar:
+// indexador de renda fixa e tokens
+// benchmark de renda fixa e tokens
+// Risco de renda fixa e tokens
+
+// Controle pelo código
+// na plataforma arredonda em 2 (frontend)
+// taxa arredonda em 4
+// marcação, accrual, truncado na 6a casa
+
+// criar tabela auxiliar de entity chamada company
+// dados de transações em transactions, nao em dados cadastrais dos ativos
+// ntnis com preço em dolar e real e taxa de cambio
+// Valuations de positions ou securities?
+//
+
+// TODO:
+// Adicionar 3 campos na tabela tokens
+// distributor
+// referal fee
+// duration
+
+//-------------------
+// Tabelas auxiliares
+
+Enum public.operations_enum {
+  delete
+  update
+}
+
+Table public.histories {
+  id bigserial [pk, increment]
+  created_at timestamptz [not null, default: `now()`]
+  created_by varchar(50) [not null]
+  table_name varchar(50) [not null]
+  old_value jsonb [not null]
+  operation operations_enum [not null]
+  description varchar(200)
+}
+
+Table public.fgts_redemption_processed_paths {
+  id serial [pk, increment]
+  path varchar(200) [unique]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+}
+
+Enum public.log_statuses_enum {
+  success
+  failed
+}
+
+Table public.logs {
+  id bigserial [pk, increment]
+  protocol varchar(100) [not null]
+  begin_date date [not null]
+  end_date date
+  duration_seconds int [note: 'GENERATED ALWAYS AS (end_date - begin_date in seconds) [STORED]']
+  status public.log_statuses_enum [not null]
+  message text
+  created_at timestamptz [not null, default: `now()`]
+}
+//-------------------
+// holidays
+Enum public.holidays_calendar_enum {
+  anbima
+  b3
+}
+Table public.holidays {
+  id smallint [pk, increment]
+  date date [not null]
+  description varchar(100)
+  calendar  public.holidays_calendar_enum [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+    (date, description, calendar) [unique, name: "unique_date_description_canlendar"]
+  }
+}
+
+
+//-------------------
+// Entity
+
+Table public.entities [headercolor: #79AD51] {
+  id serial [pk, increment]
+  name varchar(100) [not null, unique]
+  source_id integer [not null]
+  reference_table_id smallint [not null]
+  doc_id bigint
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  }
+
+Ref: public.entities.source_id > public.sources.id
+Ref: public.entities.reference_table_id > public.reference_tables.id
+
+Table public.reference_tables {
+  id smallint [pk, increment]
+  name varchar(50) [not null, unique]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+}
+
+//-------------------
+// Entity
+Table public.expected_cash_flows {
+  id serial [pk, increment]
+  entity_id integer [not null]
+  date timestamptz [not null]
+  value decimal(20,8) [not null]
+  currency_id integer [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+    (entity_id, date, currency_id) [unique, name: "unique_date_asset_currency"]
+  }
+}
+Ref: public.expected_cash_flows.entity_id > public.entities.id
+Ref: public.expected_cash_flows.currency_id > public.entities.id
+
+//-------------------
+// Subscription Bulletin
+Table public.securitization_series [headercolor: #2D6512] {
+  id serial [pk, increment]
+  issuer_id integer [not null]
+  issuance_number integer [not null]
+  series_number integer  [not null]
+  seniority_id smallint [not null]
+  seniority_number smallint [not null]
+  indexer_id smallint [not null]
+  indexer_percentage decimal(12,8)
+  spread_over_indexer decimal(12,8)
+  issuance_date date [not null]
+  maturity_date date
+  initial_price decimal(20,8) [not null]
+  quantity integer [not null]
+  cash_sweep bool [not null]
+  offer_id smallint [not null]
+  register_id smallint
+  register_b3 bool [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+    (issuer_id, issuance_number, series_number, seniority_id) [unique, name: "unique_emission_series"]
+  }
+}
+
+Ref: public.entities.id - public.securitization_series.id
+Ref: public.entities.id < public.securitization_series.issuer_id
+Ref: public.securitization_series.seniority_id > public.seniorities.id
+Ref: public.securitization_series.indexer_id > public.indexers.id
+
+Ref: public.offers.id < public.securitization_series.offer_id
+
+Table public.securitization_payment_schedules {
+  id smallint [pk, increment]
+  securitization_id integer [not null]
+  date date [not null]
+  amortization_fraction decimal(20,8) [not null]
+  interest_payment bool [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+  (id, securitization_id, date) [unique, name: "unique_payment_date_per_series"]
+  }
+}
+Ref: public.entities.id < public.securitization_payment_schedules.securitization_id
+
+
+Table public.offers {
+  id smallserial [pk, increment]
+  name varchar(30)  [unique]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+}
+
+Ref: public.registers.id < public.securitization_series.register_id
+
+Table public.registers {
+  id smallserial [pk, increment]
+  name varchar(30) unique
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+}
+
+
+Table public.securitization_expenses {
+  id smallserial [pk, increment]
+  securitization_id integer [not null]
+  name_id smallint [not null]
+  type_id smallint [not null]
+  value decimal(20,8) [not null]
+  frequency_id integer [not null]
+  billing_frequency_id integer [not null]
+  provisioning_frequency_id integer [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+    (securitization_id, name_id) [unique, name: "unique_expense_name_per_securitization"]
+  }
+}
+Table public.frequencies {
+  id smallserial [pk, increment]
+  name varchar(30) [unique]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+}
+Ref: public.frequencies.id < public.securitization_expenses.frequency_id
+Ref: public.frequencies.id < public.securitization_expenses.billing_frequency_id
+Ref: public.frequencies.id < public.securitization_expenses.provisioning_frequency_id
+Ref: public.entities.id < public.securitization_expenses.securitization_id
+
+Table public.securitization_expense_types {
+  id smallserial [pk, increment]
+  name varchar(30) [unique]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+}
+Ref: public.securitization_expense_types.id < public.securitization_expenses.type_id
+
+Table public.securitization_expense_names {
+  id smallserial [pk, increment]
+  name varchar(30) [unique]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+}
+Ref: public.securitization_expense_names.id < public.securitization_expenses.name_id
+
+
+
+Table public.securitizations [headercolor: #2D6512] {
+  id integer [pk, not null]
+  document varchar(14) [unique]
+  underlying_asset_id smallint [not null]
+  issuance_number integer [not null]
+  issuance_date date [not null]
+  issuer_id integer [not null]
+  trustee_id integer [not null]
+  assignment_yield decimal(8,6)
+  security_margin integer
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+}
+
+Ref: public.entities.id - public.securitizations.id
+Ref: public.entities.id < public.securitizations.trustee_id
+Ref: public.entities.id < public.securitizations.issuer_id
+Ref: public.securitization_underlying_assets.id < public.securitizations.underlying_asset_id
+
+
+
+
+Table public.seniorities{
+  id smallserial [pk, increment]
+  name varchar(50) [not null, unique]
+  tag char(3)
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+    name [unique, name: "unique_seniority"]
+  }
+
+}
+
+
+
+Enum public.document_types_enum {
+  cpf
+  cnpj
+}
+
+//-------------------
+// Company
+Table public.contact_infos [headercolor: #2D6512] {
+  id serial [pk, increment]
+  document varchar(14) [not null]
+  document_type public.document_types_enum
+  email varchar(50)
+  phone varchar(50)
+  wallet varchar(50)
+  zip varchar(50)
+  address varchar(200)
+  number varchar(10)
+  complement varchar(100)
+  neighborhood varchar(100)
+  city varchar(50)
+  state varchar(50)
+  country varchar(50)
+  website varchar(50)
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+}
+
+Ref: public.contact_infos.id > public.entities.id
+
+
+//--------------------------------------------
+// Tabelas de referência opcionais de "entity"
+
+Table public.entity_types_ref {
+  id smallserial [pk, increment]
+  name varchar(50)
+  parent_id smallint
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+  (name) [unique, name: "unique_name"]
+  }
+}
+
+Ref: public.entity_types_ref.id < public.entity_types_ref.parent_id
+
+Table public.entity_types {
+  id serial [pk, increment]
+  entity_id integer [not null]
+  ref_id smallint
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+  (entity_id, ref_id) [unique, name: "unique_entity_type"]
+  }
+}
+
+Ref: public.entity_types.ref_id > public.entity_types_ref.id
+Ref: public.entity_types.entity_id > public.entities.id
+
+
+//---------
+// Currencies
+
+Table public.currency_issuers {
+  id smallserial [pk, increment]
+  name varchar(50) [unique]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+}
+
+Table public.currencies {
+  id integer [pk]
+  currency_issuer_id smallint [unique]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+}
+
+Ref: public.currency_issuers.id < public.currencies.currency_issuer_id
+Ref: public.entities.id - public.currencies.id
+
+Table public.sources {
+  id serial [pk, increment]
+  name varchar(100)
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+  (name) [unique, name: "unique_sources_name"]
+  }
+}
+
+Table public.exchange_rates {
+  id serial [pk, increment]
+  numerator_id integer
+  denominator_id integer
+  methodology_id integer
+  date timestamptz [not null]
+  value decimal(18,6) [not null]
+  source_id integer
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+  (numerator_id, denominator_id, date, methodology_id) [unique, name: "unique_exchange_rates"]
+  }
+}
+
+Ref: public.exchange_rates.methodology_id > public.valuation_methodologies.id
+Ref: public.currencies.id - public.exchange_rates.numerator_id
+Ref: public.currencies.id - public.exchange_rates.denominator_id
+Ref: public.sources.id - public.exchange_rates.source_id
+
+//---------------------------
+// Transactions and Positions
+
+// id
+// timestamptz
+
+Table public.positions [headercolor: #1E69FD] {
+  id bigserial [pk, increment]
+  date timestamptz [not null]
+  holder_id integer [not null]
+  asset_id integer [not null]
+  lot_id integer [not null]
+  financial_account_id integer [not null]
+  transaction_type_id smallint [not null]
+  variation decimal(18,6) [not null]
+  total_quantity decimal(18,6) [not null]
+  block_id bigint [not null]
+  holder_bank_account_id integer [null]
+  counterparty_bank_account_id integer [null]
+  event_code text [null]
+  payment_code varchar(50)
+  originator_id bigint [null]
+  broker_id bigint [null]
+  doc_id bigint [null]
+  last_position_flag bool [not null]
+  transaction_unit_price decimal(18,6) [not null]
+  trade_date timestamptz [null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+    (date, holder_id, asset_id, financial_account_id) [unique, name: "unique_positions"]
+  }
+
+}
+
+Ref: public.positions.holder_id > public.entities.id
+Ref: public.positions.asset_id > public.entities.id
+Ref: public.positions.originator_id > public.entities.id
+Ref: public.positions.broker_id > public.entities.id
+Ref: public.positions.holder_bank_account_id > public.bank_accounts.id
+Ref: public.positions.counterparty_bank_account_id > public.bank_accounts.id
+Ref: public.positions.transaction_type_id > public.transaction_types.id
+
+Table public.financial_accounts {
+  id serial [pk, increment]
+  name varchar(200) unique [not null]
+  classification public.financial_account_classifications_enum  [not null]
+  parent_id smallint
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+    (name, classification) [unique, name: "unique_financial_accounts"]
+  }
+}
+
+Ref: public.financial_accounts.id < public.financial_accounts.parent_id
+Ref: public.financial_accounts.id < public.positions.financial_account_id
+
+Enum public.financial_account_classifications_enum {
+  debit
+  credit
+}
+
+Table public.bank_accounts {
+  id serial [pk, increment]
+  entity_id integer [not null]
+  name varchar(50) [not null]
+  description varchar(200)
+  bank varchar(3)
+  agency varchar(10) [not null]
+  account varchar(20) [not null]
+  account_digit varchar(3) [not null]
+  account_type varchar(30) [not null]
+  agency_digit varchar(3) [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+    (entity_id, name) [unique, name: "unique_bank_account"]
+  }
+}
+
+Ref: public.bank_accounts.entity_id > public.entities.id
+
+
+Table public.transaction_types {
+  id smallserial [pk, increment]
+  name varchar(50) [not null, unique]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+    name [unique, name: "unique_transactions_type"]
+  }
+}
+
+//--------
+// risks
+
+Table public.risk_types {
+  id smallserial [pk, increment]
+  name varchar(50) [not null, unique]
+  parent_id integer
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+    name [unique]
+  }
+}
+Ref: public.risk_types.id - public.risk_types.parent_id
+
+Table public.risks {
+  id serial [pk, increment]
+  from_id integer
+  to_id integer [not null]
+  date date [not null]
+  risk_type_id smallint [not null]
+  min_term smallint
+  max_term smallint
+  min_concentration decimal(8,4)
+  max_concentration decimal(8,4)
+  min_spread decimal(8,4)
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+    (from_id, to_id, date) [unique, name: "unique_risk"]
+  }
+}
+Ref: public.risks.from_id > public.entities.id
+Ref: public.risks.to_id > public.entities.id
+Ref: public.risks.risk_type_id > public.risk_types.id
+
+//------
+// Curve
+
+Table public.parameter_types {
+  id smallserial [pk, increment]
+  name varchar(50) [not null, unique]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+    name [unique, name: "unique_parameter_type"]
+  }
+}
+
+Table public.curves {
+  id bigserial [pk, increment]
+  date date
+  curve_id integer
+  parameter varchar(50)
+  value decimal(18,6)
+  parameter_type_id smallint
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+    (date, curve_id, parameter, parameter_type_id) [unique, name: "unique_curve"]
+  }
+}
+
+Ref: public.curves.curve_id > public.entities.id
+Ref: public.curves.parameter_type_id > public.parameter_types.id
+
+//------
+// Valuation
+
+Table public.valuation_methodologies {
+  id serial [pk, increment]
+  name varchar(50) [unique]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+}
+
+Table public.valuations [headercolor: #1E69FD] {
+  id bigserial [pk, increment]
+  date timestamptz [not null]
+  asset_id bigint [not null]
+  lot_id integer [not null]
+  methodology_id integer [not null]
+  clean_price decimal(20,8) [not null]
+  accrued_interest decimal(20,8)
+  indexer_id smallint
+  indexer_percentage decimal(12,8)
+  spread_over_indexer decimal(12,8)
+  spread_over_cdi decimal(12,8)
+  spread_over_inflation decimal(12,8)
+  cash_flow decimal(20,8)
+  currency_id integer [not null]
+  duration_years decimal(8,4) [null]
+  last_valuation_flag bool [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+  (date, asset_id,
+  lot_id, methodology_id) [unique, name: "unique_valuations"]
+  }
+}
+
+
+Ref: public.valuations.asset_id > public.entities.id
+Ref: public.valuations.currency_id > public.currencies.id
+Ref: public.valuations.methodology_id > public.valuation_methodologies.id
+Ref: public.valuations.indexer_id > public.indexers.id
+
+
+Table public.indexers {
+  id smallserial [pk, increment]
+  name varchar(50) [not null, unique]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+    name [unique, name: "unique_indexer"]
+  }
+
+}
+
+Table public.statuses {
+  id smallserial [pk, increment]
+  name varchar(50) [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  indexes {
+    name [unique, name: "unique_statuses"]
+  }
+}
+
+// FGTS
+
+Table public.fgts [headercolor: #2D6512] {
+  id integer [pk]
+  cession_id int [not null]
+  status_id int [not null]
+  assignment_date date [not null]
+  originator_id integer [not null]
+  contract varchar(50) [not null]
+  cef_uuid uuid
+  cef_protocol varchar(50)
+  obligor_bank varchar(50)
+  obligor_bank_code char (3)
+  assignor_id integer
+  assignee_id integer
+  obligor_person_type char(1)
+  obligor_gender varchar(20)
+  obligor_uf char(2)
+  obligor_city varchar(50)
+  obligor_neighbourhood varchar(50)
+  obligor_street varchar(100)
+  obligor_zip_code char(8)
+  obligor_birthday_date date
+  contract_emission_date date
+  contract_disbursement_value decimal(11,2)
+  contract_original_debt_value decimal(11,2)
+  acquisition_date date
+  contract_acquisition_price decimal(11,2)
+  contract_tc_fee_value decimal(11,2)
+  contract_iof_tax_value decimal(11,2)
+  contract_other_expenses_value decimal(11,2)
+  indexer_id smallint
+  contract_monthly_interest_rate decimal(9,6)
+  contract_maturity_years smallint
+  installment_code varchar(50)
+  installment_number smallint
+  contract_min_maturity_date date
+  contract_max_maturity_date date
+  face_value_original decimal(11,2) [not null]
+  face_value decimal(11,2) [not null]
+  acquisition_value decimal(11,2)
+  maturity_date_original date
+  maturity_date date
+  spread_over_indexer decimal(9,6)
+  indexer_percentage decimal(9,6)
+  spread_over_cdi  decimal(8,6)
+  ipoc text
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+    (maturity_date, contract) [unique, name: "unique_maturity_date_contract"]
+    (contract, maturity_date_original) [name: "idx_fgts_contract_maturity_date"]
+    }
+}
+
+Ref: public.entities.id - public.fgts.id
+Ref: public.entities.id - public.fgts.assignor_id
+Ref: public.entities.id - public.fgts.originator_id
+Ref: public.entities.id - public.fgts.assignee_id
+Ref: public.fgts.indexer_id > public.indexers.id
+Ref: public.fgts.status_id > public.statuses.id
+
+// NTN-I
+
+Table public.ntnis [headercolor: #2D6512] {
+  id integer [pk]
+  maturity_date date [not null]
+  face_value_usd decimal(15,6) [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+}
+
+Ref: public.entities.id - public.ntnis.id
+
+// consortiums
+
+Enum public.consortium_types_enum {
+  contemplada
+  contemplacao
+  cancelada
+}
+
+Enum public.consortium_checked_enum {
+  not_checked
+  directly
+  sampling
+}
+
+Table public.consortiums [headercolor: #2D6512] {
+  id integer [pk]
+  code varchar(100) [unique, not null]
+  assignee_id integer [not null]
+  originator_id integer [not null]
+  strategy_id smallint [not null]
+  underlying_asset_id smallint [not null]
+  cdi_debtor decimal(8,4) [not null]
+  quota_number varchar(20) [not null]
+  acquisition_date date [not null]
+  group_end_date date [not null]
+  quota_group_number varchar(20) [not null]
+  acquisition_price decimal(11,2) [not null]
+  credit_value decimal(11,2) [not null]
+  quota_outstanding_balance decimal(11,2) [not null]
+  commission_value decimal(11,2) [not null]
+  contemplation_value decimal (11, 2) [not null]
+  face_value_original decimal(11,2) [not null]
+  face_value decimal(11,2) [not null]
+  contract_number varchar(50) [not null]
+  expected_maturity_date date [not null]
+  maturity_date_original date [not null]
+  maturity_date date [not null]
+  indexer_id smallint [not null]
+  transferred_to_fund bool [not null]
+  embedded_bid_value decimal(11,2) [not null]
+  presentvalue_outstanding_balance decimal(11,2) [not null]
+  updated_outstanding_balance decimal(11,2) [not null]
+  transfer_fee_value decimal(11,2) [not null]
+  trustee_id integer [not null]
+  status_id integer [not null]
+  checked public.consortium_checked_enum [ ]
+  implied_inflation_ann decimal(8,6) [not null]
+  spread_over_cdi decimal(8,6) [not null]
+  assignment_fra decimal(8,6) [not null]
+  yield_correction decimal(8,6) [not null]
+  expected_contemplation_date date [not null]
+  contemplation_date date
+  discharge_date date
+  wallet_fidc public.fidc_wallets_enum
+  commissions_payable decimal(11,2) [not null]
+  transfer_fees_payable decimal(11,2) [not null]
+  assignor varchar(100) [not null]
+  bank varchar(3) [not null]
+  agency varchar(10) [not null]
+  account varchar(20) [not null]
+  account_digit varchar(3) [not null]
+  account_type varchar(30) [not null]
+  agency_digit varchar(3) [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+}
+
+Ref: public.entities.id < public.consortiums.assignee_id
+Ref: public.entities.id < public.consortiums.originator_id
+Ref: public.indexers.id < public.consortiums.indexer_id
+Ref: public.entities.id - public.consortiums.id
+Ref: public.entities.id < public.consortiums.trustee_id
+Ref: public.consortiums.status_id > public.statuses.id
+Ref: public.consortiums.underlying_asset_id > public.consortium_underlying_assets.id
+
+Table public.consortium_strategies {
+  id smallint [pk, increment]
+  name varchar(50) [unique]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+}
+Ref: public.consortiums.strategy_id > public.consortium_strategies.id
+
+Table public.consortium_underlying_assets {
+  id smallserial [pk, increment]
+  name varchar(50) [not null, unique]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+    name [unique, name: "unique_consortium_underlying_asset"]
+  }
+
+}
+
+Table public.securitization_underlying_assets {
+  id smallserial [pk, increment]
+  name varchar(50) [not null, unique]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+    name [unique, name: "unique_securitizations_underlying_asset"]
+  }
+}
+
+
+Enum public.fidc_wallets_enum {
+  "1"
+  "2"
+  "3"
+}
+
+// CDB
+
+Table public.cdbs [headercolor: #2D6512] {
+  id integer [pk]
+  issuer_id integer [not null]
+  issuance_date date [not null]
+  maturity_date date [not null]
+  face_value decimal(20,8) [not null]
+  fgc_guarantee bool [not null]
+  indexer_id smallint [not null]
+  spread_over_indexer decimal(12,8) [not null]
+  indexer_percentage decimal(12,8) [not null]
+  spread_over_cdi decimal(12,8)
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+}
+Ref: public.entities.id - public.cdbs.id
+Ref: public.entities.id < public.cdbs.issuer_id
+Ref: public.cdbs.indexer_id > public.indexers.id
+
+
+// Token
+
+Table public.tokens [headercolor: #2D6512] {
+  id integer [pk]
+  strategy_id smallint [not null]
+  structure_id smallint [not null]
+  issuance_count smallint [not null]
+  issuer_id integer [not null]
+  issuer_code char(2) [not null]
+  indexer_id smallint
+  estimated_moic decimal(11,4)
+  issuance_price decimal(18,6) [not null]
+  issuance_amount decimal(18,6) [not null]
+  offering_duration smallint
+  max_offering_date date
+  internal_rate_of_return decimal(8,4)
+  maturity_date date
+  return_percentage_cdi decimal(8,4)
+  minimum_issuance_amount decimal(18,6) [not null]
+  estimated_spread_over_cdi decimal(8,4)
+  estimated_spread_over_inflation decimal(8,4)
+  referral_fee decimal(7,6)
+  duration_months decimal(8,4)
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  face_value decimal (11, 2)
+}
+
+Table public.token_strategies {
+  id smallserial [pk, increment]
+  strategy_code varchar(30)
+  strategy_name varchar(100)
+  strategy_asset varchar(100)
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+  Indexes {
+    (strategy_code, strategy_name) [unique, name: "unique_strategy_code_name"]
+  }
+}
+
+Table public.token_structures {
+  id smallserial [pk, increment]
+  structure_name varchar(100)
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
+}
+
+Ref: public.token_strategies.id < public.tokens.strategy_id
+Ref: public.token_structures.id < public.tokens.structure_id
+Ref: public.entities.id - public.tokens.id
+REf: public.tokens.indexer_id > public.indexers.id
+ref: public.tokens.issuer_id > public.entities.id

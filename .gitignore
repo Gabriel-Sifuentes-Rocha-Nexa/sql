@@ -1,0 +1,17 @@
+# === Segredos — NUNCA versionar ===
+.env
+**/.env
+*.env
+# settings do VSCode contêm connection string com senha
+.vscode/
+
+# === Python ===
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+
+# === OS / editor ===
+Thumbs.db
+.DS_Store

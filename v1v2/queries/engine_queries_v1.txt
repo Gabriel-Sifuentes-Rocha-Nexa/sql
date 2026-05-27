@@ -1,0 +1,214 @@
+## Obter metadados do Asset
+
+### Public Offer
+
+      SELECT
+        s2.name,
+        s2.full_name,
+        s2.code,
+        s2.metadata,
+        (s2.metadata->'series_index') as series_index,
+        (s2.metadata->'series_number') as series_number,
+        (s2.metadata->'series_type') as series_type,
+        (s2.metadata->'series_issuance_date') as series_issuance_date,
+        (s2.metadata->'series_maturity_date') as series_maturity_date,
+        (s2.metadata->'series_issuance_amount') as series_issuance_amount,
+        (s2.metadata->'series_issuance_unit_price') as series_issuance_unit_price,
+        (s2.metadata->'series_monetary_adjustment') as series_monetary_adjustment,
+        (s2.metadata->'series_abs_spread_over_index') as series_abs_spread_over_index,
+        (s2.metadata->'series_relative_spread_over_index') as series_relative_spread_over_index
+      FROM securities s1
+      CROSS JOIN LATERAL jsonb_array_elements(s1.metadata->'composition') as compositions
+      JOIN securities s2 ON s2.aux_id = (compositions->>'asset_aux_id')::uuid
+      WHERE s1.code = ${ticker}
+
+### NXCO
+
+        SELECT
+            s2.name,
+            s2.full_name,
+            s2.code,
+            s2.metadata,
+            s2.type,
+            (s2.metadata->'linhas'->0->'administradora'->'nome') as adm_name,
+            (s2.metadata->'linhas'->0->'administradora'->'documento') as adm_cnpj,
+            (s2.metadata->'linhas'->0->'recebivel'->'cota_numero') as quota_number,
+            (s2.metadata->'linhas'->0->'recebivel'->'grupo_numero') as group_number,
+            (s2.metadata->'linhas'->0->'recebivel'->'indice_reajuste') as index_name,
+            (s2.metadata->'linhas'->0->'recebivel'->'valor_compra') as total_value,
+            (s2.metadata->'internal'->'strategy') as strategy
+        FROM securities s1
+        CROSS JOIN LATERAL jsonb_array_elements(s1.metadata->'composition') as compositions
+        JOIN securities s2 ON s2.aux_id = (compositions->>'asset_aux_id')::uuid
+        WHERE s1.code = ${ticker}
+
+
+### NXNI
+
+        SELECT
+            s1.name,
+            s1.full_name,
+            s1.code,
+            t.metadata,
+            'Nota do Tesouro Nacional Série I' as instrument,
+            (t.metadata->'token_true_yield') as token_true_yield,
+            (t.metadata->'estimatedSpreadOverCDI') as estimated_spread_over_cdi,
+            (t.metadata->'last_maturity_date') as last_maturity_date,
+            t.transaction_date
+        FROM securities s1
+        CROSS JOIN LATERAL jsonb_array_elements(s1.metadata->'composition') as compositions
+        JOIN transactions t ON t.asset_aux_id = (compositions->>'asset_aux_id')::uuid
+        WHERE s1.code = ${ticker} and t.type = 'collateralize'
+        ORDER BY t.transaction_date
+        LIMIT 1
+
+
+## Obter underlyng
+
+      SELECT e.metadata->>'spv_underlyings' AS underlying
+      FROM securities s
+      JOIN entities e ON e.aux_id = (s.metadata->>'issuer')::uuid
+      WHERE (s.name = ${ticker} OR s.full_name = ${ticker})
+        AND s.type = 'token'
+      LIMIT 1
+
+## Verificar se é fracionado
+
+      SELECT s.metadata->>'issuer' as issuer, e.metadata
+      FROM securities s
+      LEFT JOIN entities e ON e.aux_id = (s.metadata->>'issuer')::uuid
+      WHERE s.name = ${ticker} AND jsonb_array_length(e.metadata->'series') > 1
+
+## Obter Cash Flow
+
+### NXCO CR
+
+        WITH issuer AS (
+          SELECT metadata->>'issuer' FROM securities WHERE name = ${ticker}
+        ), items AS (
+          SELECT DISTINCT ON (p.asset_aux_id, p.holder_aux_id) *
+          FROM positions p
+          WHERE p.holder_aux_id = (SELECT * FROM issuer)::uuid OR p.metadata->>'event_related' = (SELECT name FROM entities WHERE aux_id = (SELECT * FROM issuer)::uuid)
+          ORDER BY p.asset_aux_id, p.holder_aux_id, p.position_date DESC
+        )
+        SELECT
+          SUM((s.metadata->'linhas'->0->'recebivel'->'valor_contrato')::numeric * i.amount) AS expected_cash_flow_values,
+          TO_CHAR(
+            TO_DATE(s.metadata->'linhas'->0->'recebivel'->>'data_resgate', 'YYYY-MM-DD'),
+            'YYYY-MM'
+          ) AS month_year_maturity
+        FROM
+          items i
+        JOIN securities s ON
+          s.aux_id = i.asset_aux_id
+        WHERE
+          s.metadata->'linhas'->0->'recebivel'->>'data_resgate' IS NOT NULL
+          ${fractionalWhere}
+        GROUP BY month_year_maturity
+
+
+### NXCO Nào CR
+
+        SELECT
+          SUM((s2.metadata->'linhas'->0->'recebivel'->'valor_contrato')::numeric) AS expected_cash_flow_values,
+          TO_CHAR(
+            TO_DATE(s2.metadata->'linhas'->0->'recebivel'->>'data_resgate', 'YYYY-MM-DD'),
+            'YYYY-MM'
+          ) AS month_year_maturity
+        FROM
+          securities s1,
+          lateral jsonb_array_elements(s1.metadata->'composition') AS composition
+        JOIN securities s2 ON
+          s2.aux_id = (composition->>'asset_aux_id')::uuid
+        WHERE
+          s1.name = ${ticker}
+          AND s2.metadata->'linhas'->0->'recebivel'->>'data_resgate' IS NOT NULL
+        GROUP BY month_year_maturity
+
+### FGTS CR
+
+        WITH issuer AS (
+          SELECT metadata->>'issuer' FROM securities WHERE name = ${ticker}
+        ), items AS (
+          SELECT DISTINCT ON (p.asset_aux_id, p.holder_aux_id) *
+          FROM positions p
+          WHERE p.holder_aux_id = (SELECT * FROM issuer)::uuid OR p.metadata->>'event_related' = (SELECT name FROM entities WHERE aux_id = (SELECT * FROM issuer)::uuid)
+          ORDER BY p.asset_aux_id, p.holder_aux_id, p.position_date DESC
+        )
+        SELECT
+          SUM((s.metadata->>'valor_nominal')::numeric * i.amount) AS expected_cash_flow_values,
+          TO_CHAR(
+            TO_DATE(s.metadata->>'data_vencimento', 'YYYY-MM-DD'),
+            'YYYY-MM'
+          ) AS month_year_maturity
+        FROM
+          items i
+        JOIN securities s ON
+          s.aux_id = i.asset_aux_id
+        WHERE
+          s.metadata->>'data_vencimento' IS NOT NULL
+          ${fractionalWhere}
+        GROUP BY month_year_maturity
+
+### FGTS Nào CR
+
+        SELECT
+          SUM((s2.metadata->'valor_nominal'):: numeric) AS expected_cash_flow_values,
+          TO_CHAR(
+            TO_DATE(s2.metadata->>'data_vencimento', 'YYYY-MM-DD'),
+            'YYYY-MM'
+          ) AS month_year_maturity
+        FROM
+          securities s1,
+          lateral jsonb_array_elements(s1.metadata->'composition') AS composition
+        JOIN securities s2 ON
+          s2.aux_id = (composition->>'asset_aux_id')::uuid
+        WHERE
+          s1.name = ${ticker}
+          AND s2.metadata->>'data_vencimento' IS NOT NULL
+        GROUP BY month_year_maturity
+
+
+### NTNI CR
+
+        WITH issuer AS (
+          SELECT metadata->>'issuer' FROM securities WHERE name = ${ticker}
+        ), items AS (
+          SELECT DISTINCT ON (p.asset_aux_id) *
+          FROM positions p
+          WHERE p.holder_aux_id = (SELECT * FROM issuer)::uuid OR p.metadata->>'event_related' = (SELECT name FROM entities WHERE aux_id = (SELECT * FROM issuer)::uuid)
+          ORDER BY p.asset_aux_id, p.holder_aux_id, p.position_date DESC
+        )
+        SELECT
+          SUM((s.metadata->>'ntni_base_pricing_price')::numeric * (i.metadata->>'reserved_amount')::numeric) AS expected_cash_flow_values,
+          TO_CHAR(
+            TO_DATE(s.metadata->>'maturity_date', 'YYYY-MM-DD'),
+            'YYYY-MM'
+          ) AS month_year_maturity
+        FROM
+          items i
+        JOIN securities s ON
+          s.aux_id = i.asset_aux_id
+        WHERE
+          s.metadata->>'maturity_date' IS NOT NULL
+          ${fractionalWhere}
+        GROUP BY month_year_maturity
+
+
+### NTNI Não CR
+
+        SELECT
+          SUM((s1.metadata->'composition'->0->'amount')::numeric * (s2.metadata->'ntni_base_pricing_price')::numeric) AS expected_cash_flow_values,
+          TO_CHAR(
+            TO_DATE(s2.metadata->>'maturity_date', 'YYYY-MM-DD'),
+            'YYYY-MM'
+          ) AS month_year_maturity
+        FROM
+          securities s1,
+          lateral jsonb_array_elements(s1.metadata->'composition') AS composition
+        JOIN securities s2 on
+          s2.aux_id = (composition->>'asset_aux_id')::uuid
+        WHERE
+          s1.name = ${ticker}
+          AND s2.metadata->>'maturity_date' IS NOT NULL
+        GROUP BY month_year_maturity
