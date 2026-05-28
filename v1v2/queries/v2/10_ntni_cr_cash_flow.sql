@@ -66,8 +66,3 @@ JOIN ntnis n  ON n.id = held.asset_id
 WHERE n.maturity_date IS NOT NULL
 GROUP BY month_year_maturity
 ORDER BY month_year_maturity;
--- exemplo de token CR-NTNI p/ teste: NXNTNII27-1 (issuer CR-NTNI-24)
-
-
-
--- II27-2'

@@ -33,4 +33,3 @@ JOIN entities token_entity                  ON token_fa.name = 'assets pledged a
 WHERE token_entity.name = 'NXFGTSE34-1'
   AND f.maturity_date IS NOT NULL
 GROUP BY month_year_maturity;
--- WHERE token_entity.name = 'NXFGTSB31-3';  -- exemplo para testes

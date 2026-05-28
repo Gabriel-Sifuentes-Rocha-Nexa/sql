@@ -34,5 +34,3 @@ JOIN entities token_entity                  ON token_fa.name = 'assets pledged a
 WHERE token_entity.name = 'NXCOC26-1'
   AND c.expected_maturity_date IS NOT NULL
 GROUP BY month_year_maturity;
-
-

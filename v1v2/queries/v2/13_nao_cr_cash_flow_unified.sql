@@ -58,5 +58,3 @@ WHERE maturity_date IS NOT NULL
 GROUP BY month_year_maturity, asset_class, currency
 ORDER BY month_year_maturity;
 -- exemplos: 'NXCOC26-1' (consórcio) ; 'NXFGTSE34-1' (FGTS) ; 'NXNII27-1' (NTN-I)
-
-

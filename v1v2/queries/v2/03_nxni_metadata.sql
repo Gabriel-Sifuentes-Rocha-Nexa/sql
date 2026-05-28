@@ -71,4 +71,3 @@ LEFT JOIN indexers idx                      ON idx.id = tk.indexer_id
 WHERE token_entity.name = 'NXNIC26-2'
 ORDER BY pos.date
 LIMIT 1;
-
