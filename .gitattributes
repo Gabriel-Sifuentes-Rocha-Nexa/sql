@@ -1,0 +1,2 @@
+# Normaliza line endings — texto sempre LF no repo, sem warnings CRLF.
+* text=auto eol=lf

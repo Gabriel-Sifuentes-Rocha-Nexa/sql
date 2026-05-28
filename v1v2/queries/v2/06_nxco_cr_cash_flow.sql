@@ -22,6 +22,18 @@
 -- WHERE s.metadata->'linhas'->0->'recebivel'->>'data_resgate' IS NOT NULL
 -- GROUP BY month_year_maturity
 -- ------------------------------------------------------------
+-- CR = cotas de consórcio reservadas/detidas pelo CR (issuer do token). A
+-- tradução literal do V1 (holder_id/event_code + JOIN consortiums) ZERA o
+-- resultado: as posições do issuer apontam pro token e a série "-SINGLE",
+-- nunca pra linhas de `consortiums` — o INNER JOIN no ativo elimina tudo.
+-- Em V2 as cotas vivem em duas financial_accounts:
+--   1. RESERVATION-<issuer>  — cotas reservadas pro CR (holder = FIDC).
+--   2. investments           — conta global; filtrar holder_id = issuer (o CR).
+-- valor = face_value * total_quantity (last_position_flag = saldo corrente),
+-- agrupado pelo mês de expected_maturity_date (= data_resgate do V1).
+-- Perf: a conta `investments` é global; por isso branches separados (UNION ALL),
+-- cada um com igualdades (financial_account_id, holder_id) que o índice cobre.
+-- ============================================================
 WITH cr AS (
     SELECT issuer_entity.id   AS issuer_id,
            issuer_entity.name AS issuer_name

@@ -20,7 +20,7 @@
 -- GROUP BY month_year_maturity
 -- ------------------------------------------------------------
 -- Não CR = composição teórica do token (subjacentes ligados via fa do colateral).
--- SUM(credit_value) sem multiplicar por quantidade (diferente de CR).
+-- SUM(face_value) sem multiplicar por quantidade (diferente de CR).
 -- ============================================================
 SELECT
     SUM(c.face_value)                                       AS expected_cash_flow_values,

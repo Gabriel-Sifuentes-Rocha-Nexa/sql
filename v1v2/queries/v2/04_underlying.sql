@@ -10,6 +10,10 @@
 --   AND s.type = 'token'
 -- LIMIT 1
 -- ------------------------------------------------------------
+-- ESCOPO: aplica-se a tokens com issuer-securitization (CR-style). Tokens de
+-- tokenização direta (issuer = FIDC / NEXA DIGITAL ASSETS SA) retornam VAZIO,
+-- pois o `JOIN securitizations` não casa. Equivale ao V1, que lia o campo
+-- `metadata->>'spv_underlyings'` (específico de SPV).
 -- ============================================================
 SELECT
     sua.name                                AS underlying,                 -- spv_underlyings (V1)

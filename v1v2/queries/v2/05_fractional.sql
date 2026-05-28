@@ -11,6 +11,10 @@
 -- Resultado: retorna 0 ou 1 linha. Linha presente = fracionado (>1 série).
 -- V1 retornava e.metadata (metadata completo do issuer) → em V2, os campos
 -- da securitization do issuer + a contagem de séries.
+-- ESCOPO: aplica-se a tokens com issuer-securitization (CR-style). Tokens de
+-- tokenização direta (issuer = FIDC / NEXA DIGITAL ASSETS SA) retornam VAZIO,
+-- pois `JOIN securitizations` / `JOIN securitization_series` não casam — pra
+-- esses, "é fracionado?" não é definido (não existe estrutura de séries).
 -- ============================================================
 SELECT
     issuer_entity.id                        AS issuer,
