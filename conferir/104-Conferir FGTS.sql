@@ -282,3 +282,15 @@ select * from fgts where id='1057327'
 
 
 select * from entities where name like '88839151002%'
+
+
+select count(*), valuation_methodologies.name, valuations.date::date date from valuations 
+join valuation_methodologies on 
+    valuation_methodologies.id = valuations.methodology_id
+where 1=1
+-- and valuations.date='2026-05-21'
+and asset_id in (select id from fgts where created_at>'2026-05-20')
+group by valuation_methodologies.name, valuations.date::date
+
+
+select * from valuations
