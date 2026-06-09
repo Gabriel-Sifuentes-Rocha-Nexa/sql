@@ -43,6 +43,10 @@ CR vs Não CR e a armadilha do NULL: ver `../v2_reference/financial_accounts_and
 | [utils/token_to_cr_series.sql](utils/token_to_cr_series.sql) | Token → `securitization_series` específica (via conta de colateral) + a mãe (CR) | nome do **token** | ✅ |
 | [utils/cr_series_rentability.sql](utils/cr_series_rentability.sql) | Rentabilidade cadastrada das séries de um CR (indexer, %, spread, seniority, datas) | nome da **mãe** (ex. `CR-FGTS-30`) | ✅ |
 | [utils/cr_series_issuance_date.sql](utils/cr_series_issuance_date.sql) | Data de emissão (e vencimento) de uma CR series | nome da **série** (ex. `CR-FGTS-30-59-SENIOR`) | ✅ |
+| [utils/fgts_token_name_audit_v2.sql](utils/fgts_token_name_audit_v2.sql) | Auditoria do nome: token FGTS → série V2 + mãe + maturity/seniority/sufixo | lista fixa de tokens | ✅ |
+| [utils/fgts_token_name_audit_v1.sql](utils/fgts_token_name_audit_v1.sql) | Auditoria no **V1 (Supabase)**: série + nome do token no V1, por mãe CR-FGTS | nº dos CRs | ✅ |
+
+**Correção de nomes (scripts WRITE, não read-only):** rename dos 6 tokens FGTS (CR-01..06) p/ espelhar o V1 + log em `histories`. Doc: [utils/fgts_token_rename.md](utils/fgts_token_rename.md). Scripts: `fgts_token_rename_v2.py`/`.sql` (local) e `fgts_token_rename_PROD.py` (prod; dry-run por padrão, `COMMIT=True` aplica). **Aplicado em prod 2026-06-09.**
 
 ---
 
