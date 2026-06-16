@@ -1,0 +1,2 @@
+id,date,holder_id,asset_id,lot_id,financial_account_id,transaction_type_id,variation,total_quantity,block_id,holder_bank_account_id,counterparty_bank_account_id,event_code,payment_code,originator_id,broker_id,doc_id,last_position_flag,created_at,updated_at,transaction_unit_price,trade_date
+3224574,2025-11-14 09:00:00-03,20449,2,0,10,1,-10099.870000,72478.330000,2604287734687241374,,,,,,,2604287734687241403,f,2026-04-28 00:27:49.043499-03,,,

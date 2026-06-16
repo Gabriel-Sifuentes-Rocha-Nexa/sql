@@ -31,18 +31,18 @@ essas camadas. URLs no [`.env`](.env): `DATABASE_URL` (V2) e `V1_DATABASE_URL` (
 
 Confira nomes de coluna/tabela contra o schema **antes** de escrever a query — não confie só na memória.
 
-## 1. Ambiente — restrição CRÍTICA e ARMADILHA da porta 5432
+## 1. Ambiente — restrição CRÍTICA (só LOCAL) e a porta 5432
 
 - **NUNCA tocar o banco V1 nem o V2 de PROD.** Toda alteração para testar/validar vai **só** na cópia LOCAL.
 - **A cópia LOCAL do V2 = PostgreSQL 17 NATIVO do Windows** (serviço `postgresql-x64-17`), database **`engine`** (~6.9 GB, ~16,3 M valuations). O db `postgres` dessa instância é VAZIO — não é ele.
-- **ARMADILHA:** a porta 5432 tem DOIS postgres — o nativo (IPv4 `0.0.0.0`) **e** um container Docker `postgres` (IPv6 `::`, via `com.docker.backend`). `docker exec postgres psql` entra no CONTAINER, que é uma base DIFERENTE e reduzida (schema singular, só 26 valuations, `tokens` vazio) — **NÃO é a cópia do V2**.
-- **SEMPRE conectar via TCP `-h 127.0.0.1` no db `engine`. NUNCA via `docker exec`.**
+- **Porta 5432 (RESOLVIDO 2026-06-10):** havia DOIS postgres na 5432 — o nativo (a cópia do V2) **e** um container Docker `postgres` leftover (base DIFERENTE/reduzida: schema singular `consortium`/`ntni`, só 26 valuations, `tokens` vazio). O container foi **removido** (`docker rm -f postgres` + volume órfão); era standalone (sem compose, `restart=no`, rede bridge), sem uso pelo valuator. **Agora a 5432 = só o nativo `engine`, sem ambiguidade.** Se algum dia reaparecerem dois postgres na 5432, é um novo `docker run postgres` explícito — remover.
+- **SEMPRE conectar via TCP `-h 127.0.0.1` no db `engine`** (nunca `docker exec`).
 - Credenciais em [`.env`](.env) (gitignored): `postgres:postgres@127.0.0.1:5432/engine`.
 
 ```powershell
 $env:PGPASSWORD="postgres"
 & "C:\Program Files\PostgreSQL\17\bin\psql.exe" -h 127.0.0.1 -p 5432 -U postgres -d engine -c "SELECT count(*) FROM valuations;"
-# sanidade: deve retornar ~16.328.680 (não 26). Se vier 26, você está no container errado.
+# sanidade: deve retornar ~16,3 M. Se vier 26, há um container Docker leftover na 5432 (remover; ver acima).
 ```
 
 ## 2. Convenções de query
